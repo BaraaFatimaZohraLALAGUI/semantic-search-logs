@@ -2,18 +2,18 @@
 import os, queue, socket, threading, time
 from elasticsearch import Elasticsearch, helpers
 from sentence_transformers import SentenceTransformer
-from sophos import parse, to_text, MAPPING     # MAPPING = the mappings dict from create_index.py
+from sophos import parse, to_text, MAPPINGS, index_for
 
 ES_URL     = os.getenv("ES_URL", "http://es:9200")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 64))
 FLUSH_SECS = float(os.getenv("FLUSH_SECS", 2))
-INDEX      = "sophos-logs"
 
 es    = Elasticsearch(ES_URL)
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-if not es.indices.exists(index=INDEX):
-    es.indices.create(index=INDEX, mappings=MAPPING)
+for idx, mapping in MAPPINGS.items():
+    if not es.indices.exists(index=idx):
+        es.indices.create(index=idx, mappings=mapping)
 
 q = queue.Queue(maxsize=20000)
 dropped = 0
@@ -36,7 +36,7 @@ def flush(lines):
     texts = [to_text(d) for d in docs]
     vecs  = model.encode(texts, batch_size=64, normalize_embeddings=True)
     helpers.bulk(es, (
-        {"_index": INDEX,
+        {"_index": index_for(d),
          "_source": {**d, "message_text": t, "embedding": v.tolist()}}
         for d, t, v in zip(docs, texts, vecs)
     ))
