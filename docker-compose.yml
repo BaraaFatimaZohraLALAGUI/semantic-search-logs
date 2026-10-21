@@ -1,0 +1,35 @@
+services:
+  es:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.1
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    ports: ["9200:9200"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -qE 'green|yellow'"]
+      interval: 5s
+      retries: 30
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.5.1
+    environment: [ELASTICSEARCH_HOSTS=http://es:9200]
+    ports: ["5601:5601"]
+    depends_on: { es: { condition: service_healthy } }
+
+  ingestor:
+    build: ./ingestor
+    environment:
+      - ES_URL=http://es:9200
+      - BATCH_SIZE=64
+      - FLUSH_SECS=2
+    ports: ["5514:5514/udp"]        # also lets you send from the host or a real firewall
+    depends_on: { es: { condition: service_healthy } }
+
+  generator:
+    build: "./log generator"
+    environment:
+      - SYSLOG_HOST=ingestor
+      - SYSLOG_PORT=5514
+      - RATE=1                    
+    depends_on: [ingestor]
